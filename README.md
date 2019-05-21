@@ -1,2 +1,2 @@
 # nyc-collisions
-A R Project about NYPD Motor Vehicle Collisions
+A data visualization project about NYPD Motor Vehicle Collisions using R.
