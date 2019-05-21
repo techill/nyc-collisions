@@ -1,0 +1,482 @@
+---
+title: "Data Visualization and Analysis of NYPD Motor Vehicle Collisions"
+author: "Mark Daley, Lu Liu, Wallin Valdera, Albricia Lozado"
+date: "5/13/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+#Introduction
+
+## Problem Statement:
+Motor vehicle collisions are tied to our daily lives closely. If you ever subscribed to the City of New York's official source for information – Notify NYC, you might receive emails or text messages notifying you the vehicle collisions just happened with a brief description including the location, time, and so on.
+
+Besides the notification sent from the City office, NYPD collects the historical motor vehicle collision data and posts it on the NYPD website for public access. According to NYC OpenData – the City's official data portal,  this collision data is "manually run every month and reviewed by the TrafficStat Unit before being posted on the NYPD website." Each record/row/observation represents a collision in NYC, indicating some important attribute, such as date, time, location, and the number of people involved.
+
+By visualizing the collision data collected by NYPD, we can better understand the trends of collisions occurred in the past years and find out their patterns, and therefore, provide insights to government agencies and public to take actions to diminish suck kinds of accidents and the corresponding damage and improve public safety.
+
+## Goals:
+Our main goal is to interpret the following three parts through data visualization:
+1. Trend of Collisions
+2. Neighborhoods that mostly collisions happen
+3. Top contributing factors that caused the collisions
+
+## Dataset:
+Dataset Name: NYPD Motor Vehicle Collisions
+
+Source: NYC Open Data https://data.cityofnewyork.us/Public-Safety/NYPD-Motor-Vehicle-Collisions/h9gi-nx95
+
+Dimension (by the time that our dataset was exported):
+- Observations: 1,471,119
+- Variables: 30
+
+Time Period: 2012-10-21 to 2019-04-01
+
+
+
+# Data Preprocessing
+
+First, we installed necessary packages and loaded corresponding libraries to setup the working environment.
+```{r setup, include=FALSE}
+
+## Set working directory:
+setwd <- function(dir) {
+  if (missing(dir) || is.null(dir) || dir == "") {
+    dir <- "~/Desktop"
+  }
+  base::setwd(dir)
+}
+
+install.packages("tidyverse", repos="http://cran.rstudio.com/")
+## Core tidyverse packages automatically load ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats.
+library(tidyverse)
+
+## The lubridate package comes with tidyverse but the library needs to be load separately.
+library(lubridate)
+
+## Intall the package to read large local CSV file through fread() function:
+install.packages("data.table", repos="http://cran.rstudio.com/")
+library(data.table)
+
+
+## Install the package to geocode locations between longitude & latitiude <> zip code & neighborhood,
+## and visualize spatial data and models on top of static maps from various online sources (e.g Google Maps and Stamen Maps).
+install.packages("ggmap", repos="http://cran.rstudio.com/")
+library(ggmap)
+
+## Turn off scientific notation
+options(scipen = 999)
+
+## Graphical scales map data to aesthetics, and provide methods for automatically
+## determining breaks and labels for axes and legends for visulization.
+install.packages("scales", repos="http://cran.rstudio.com/")
+library(scales)
+
+```
+
+Then, we extract the data from the identified data source(s).
+
+### Data Import Method 1: Socrata Open Data API (SODA)
+  * Please uncomment the all code in the chuck below to run as it takes about 10 minute to fectch data from OpenData API.
+```{r data-import-SODA, echo=FALSE}
+
+# ## ------ Data Import ------
+# 
+# ## Install the required package of NYC Open Data SODA API to access the data online:
+# install.packages("RSocrata", repos="http://cran.rstudio.com/")
+# library(RSocrata)
+# 
+# ## Data Import Method 1: Access data via NYC Open Data SODA API:
+# # nyc_collision <- read.socrata("https://data.cityofnewyork.us/resource/qiz3-axqb.json", 
+# #                               app_token = "2vFix7G27Pze1rkNxoSIVY2TJ")
+# 
+# 
+# View(nyc_collision)
+# dim(nyc_collision)
+# glimpse(nyc_collision)
+
+```
+
+- Data Import Method 2: Read raw data from CSV file
+  * Please uncomment the all code in the chuck below if you want to try the script.
+```{r data-import-csv, echo=FALSE}
+
+# ## Data Import Method 2: Read raw data from CSV file:
+# getwd()
+# nyc_collision_raw <- fread("./NYPD_Motor_Vehicle_Collisions.csv")
+# glimpse(nyc_collision_raw)
+
+```
+
+#### Note 1: 
+The data fetched from NYC Open Data SODA API has one extra column "location.type" than what listed on the website or CSV file.
+
+#### Note 2:
+The field/column name in CSV file and from SODA API are formated differently. The cleaning process is using the data extracted from SODA API, not from CSV file.
+
+
+# Cleaning Process:
+1. Drop columns that have > 15% of missing values -- 18 of 30 variables are kept
+2. Keep only rows which have both valid latitude and longitude values
+3. Convert the data type of columns `latitude`, `longitude`, `number_of_cyclist_injured`:`number_of_persons_killed` from character to numeric values by column index using modify_at()
+4. Keep only rows which have both valid `contributing_factor_vehicle_1` and `vehicle_type_code1`
+5. Replacing missing value with "None" in column `contributing_factor_vehicle_2`
+6. Replacing missing value with 0 in columns `number_of_persons_injured` and `number_of_persons_killed`
+
+   * Please uncomment the all code in the chuck below if you want to try the script.
+```{r data-cleaning, include=FALSE}
+
+# nyc_collision <- as_tibble(nyc_collision)
+# str(nyc_collision)
+# nyc_collision
+# 
+# ## Overview the total number of NA in each column:
+# map(nyc_collision, ~sum(is.na(.)))   ## Display the total number of NA of each variable by 1 object per row.
+# 
+# colSums(is.na(nyc_collision))   ## Display the total number of NA of each variable by by showing multiple object per row.
+# 
+# ## Get the percentage of NA (missing value in each colum):
+# filter_vars <- nyc_collision %>% 
+#   map_dbl(~sum(is.na(.)) / length(.))
+# filter_vars %>% str()
+# str(filter_vars)
+# 
+# 
+# nyc_collision %>%
+#   filter(is.na(longitude)) %>%
+#   View()
+# 
+# ## Display the columns that have Miss Value rate less or equal than 15%, which should be keep for analysis:
+# filter_vars <- nyc_collision %>%
+#   map_dbl(~sum(is.na(.))/length(.))
+# filter_vars[filter_vars > 0.15]
+# 
+# str(nyc_collision)
+# 
+# ## Display columns which contain over 15% missing values:
+# filter_vars[filter_vars > 0.15]
+# 
+# 
+# 
+# ## Save columns which contain less or equal 15% missing values:
+# nyc_collision_saved <- nyc_collision %>% 
+#   select(names(filter_vars[filter_vars <= 0.15]))
+# # nyc_collision[names(filter_vars[filter_vars <= 0.15])]
+# 
+# str(nyc_collision_saved)
+# glimpse(nyc_collision_saved)
+# 
+# ## Keep only rows which have both valid latitude and longitude values:
+# nyc_collision_saved <- subset(nyc_collision_saved, !(is.na(`latitude`)) & !(is.na(`longitude`)))
+# 
+# ## Convert columns `latitude`, `longitude`, `number_of_cyclist_injured`:`number_of_persons_killed` from character to numeric values by column index:
+# nyc_collision_saved <- nyc_collision_saved %>%
+#   modify_at(c(4, 7:15), ~as.numeric(.))
+# 
+# glimpse(nyc_collision_saved)
+# 
+# 
+# str(nyc_collision_saved)
+# glimpse(nyc_collision_saved)
+# 
+# View(nyc_collision_saved)
+# 
+# 
+# colSums(is.na(nyc_collision_saved))
+# 
+# nyc_collision_saved %>%
+#   filter(is.na(`contributing_factor_vehicle_1`)) %>%
+#   View()
+# 
+# ## Keep only rows which have both valid `contributing_factor_vehicle_1` and `vehicle_type_code1`:
+# nyc_collision_saved <- subset(nyc_collision_saved, !(is.na(`contributing_factor_vehicle_1`)) & !(is.na(`vehicle_type_code1`)))
+# 
+# View(nyc_collision_saved)
+# 
+# colSums(is.na(nyc_collision_saved))
+# 
+# ## Replacing missing value with "None" in column `contributing_factor_vehicle_2`:
+# nyc_collision_saved[, 2][is.na(nyc_collision_saved[, 2])] <- c("None")
+# colSums(is.na(nyc_collision_saved))
+# 
+# ## Replacing missing value with 0 in columns `number_of_persons_injured` and `number_of_persons_killed`:
+# nyc_collision_saved[, 14:15][is.na(nyc_collision_saved[, 14:15])] <- 0
+# colSums(is.na(nyc_collision_saved))
+
+```
+
+7. Save the final cleaned dataset as .Rda file for next steps
+*** Please uncomment the all code in the chuck below if you want to try the script.
+```{r save-data, include=FALSE}
+
+# ##Save the final cleaned data as Rda file for future use:
+# getwd()
+# # setwd("./data")
+# # getwd()
+# save(nyc_collision_saved, file = "nyc_collision_saved.Rda")
+
+```
+
+### Limits:
+- Unidentified value / misspelling / case-sensitive affects statistics
+- Imbalanced data: E.g., 75 percentile of collisions had zero people injured. This will affect the prediction accuracy while using `number_of_persons_killed` as a feature for modeling
+
+
+# Data Visualization
+
+## Visualization: Part 1
+### NYC Collisions on New Year’s Day 2019
+
+Plot Type: Interactive Map
+
+Dataset: 
+Collisions occurred on New Year’s Day 2019 are filtered
+
+R Packages used:
+leaflet
+
+Variables:
+longitude, latitude
+
+```{r nyd19-collision-map, include=FALSE}
+
+load("../data/nyc_collision_saved.Rda")
+
+## ------ Interactive Maps with Leaflet ------
+## Install the open-source JavaScript libraries leaflet for interactive maps:
+install.packages("leaflet", repos="http://cran.rstudio.com/")
+library(leaflet)
+
+collisons_2019_newyear <- nyc_collision_saved %>% 
+  filter(date == "2019-01-01")
+
+collisons_2019_newyear
+
+collision_map <- leaflet(collisons_2019_newyear) %>% 
+  addTiles() %>% 
+  addCircleMarkers(lng = ~longitude, lat = ~latitude, popup = "NYC Collisions")
+
+collision_map
+
+
+glimpse(nyc_collision_saved)
+
+```
+![](Rplot_nyc_collisions_2019-01-01.png)
+
+### Results:
+- Total 381 collisions occurred on 2019-01-01
+- Mostly happened in Soho, Midtown (34th St – 60th St), and Sunnyside
+
+### Limits:
+- Large dataset overload: even monthly data are difficult to be rendered. Over 15K collisions happened in just January 2019.
+
+```{r rm-raw, include=FALSE}
+
+rm(nyc_collision_saved, collisons_2019_newyear, collision_map)
+gc()
+
+```
+
+
+
+
+### Visualization: Part 2
+
+```{R, include=FALSE}
+
+# Installing the required libraries
+install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+install.packages("hms", repos = "http://cran.us.r-project.org")
+install.packages('reshape2', repos = "http://cran.us.r-project.org")
+
+# Loading the libraries
+library(ggplot2)
+library(lubridate)
+library(reshape2)
+
+
+# Set Working Directory
+setwd <- function(dir) {
+  if (missing(dir) || is.null(dir) || dir == "") {
+    dir <- "C:/Users/me/Desktop"
+  }
+  base::setwd(dir)
+}
+
+load("nyc_collision_saved.Rda")
+
+# Storing the indexes of necessary columns
+colnum <- c("date", "latitude", "longitude", "number_of_cyclist_injured", "number_of_cyclist_killed", "number_of_motorist_injured", "number_of_motorist_killed", "number_of_pedestrians_injured", "number_of_pedestrians_killed", "number_of_persons_injured", "number_of_persons_killed", "time", "vehicle_type_code1")
+
+# Creating a dataframe with only required columns
+df <- nyc_collision_saved[,colnum]
+df$time <- hm(df$time)
+df$Hour_Interval <- hour(df$time)
+df$Year <- year(df$date)
+df$Month <- month(df$date)
+```
+
+```{R plot3, include=FALSE}
+# PLOT 3 - KILLING STATISTICS THROUGHOUT THE DAY
+df1 <- aggregate.data.frame(x = df$number_of_persons_killed , by = list(Hour_of_day=df$Hour_Interval), FUN = sum)
+names(df1)[2] <- "Total_People_Killed"
+
+plot3 <- ggplot(df1, aes(x = Hour_of_day, y = Total_People_Killed)) +
+  geom_bar(stat = "identity", show.legend = TRUE, fill="Red") +
+  geom_smooth(method = "auto", col="blue", se=FALSE) +
+  scale_colour_brewer(palette = "Set1") +
+  ggtitle("Accident Killings across time of the day") +
+  theme_bw()
+#save image 3
+ggsave(filename="Plot3.png", plot=plot3)
+```
+
+```{R plot5, include=FALSE}
+
+
+# PLOT 5 - INJURED vs KILLING STACKED BAR CHART ACROSS YEARS
+df2 <- aggregate.data.frame(x = df$number_of_persons_killed , by = list(Year=df$Year), FUN = sum)
+names(df2)[2] <- "Total_People_Killed"
+
+df3 <- aggregate.data.frame(x = df$number_of_persons_injured , by = list(Year=df$Year), FUN = sum)
+names(df3)[2] <- "Total_People_Injured"
+df4 <- as.data.frame(cbind(df2$Year,df2$Total_People_Killed,df3$Total_People_Injured))
+names(df4) <- c("Year", "Total_People_Killed", "Total_People_Injured")
+df5 <- melt(data = df4, id.vars = "Year")
+
+plot5 <- ggplot(df5, aes(x = Year, y = value, fill=variable)) +
+  geom_bar(stat = "identity") +
+  ggtitle("People Injured vs Killed across Years") +
+  theme_bw()
+#save image 5
+ggsave(filename="Plot5.png", plot=plot5) 
+```
+
+```{R plot6, include=FALSE}
+
+# PLOT 6 HEATMAP FOR PEOPLE KILLED ACROSS MONTHS AND YEARS
+df6 <- aggregate.data.frame(x = df$number_of_persons_killed , by = list(Month=df$Month,Year=df$Year), FUN = sum)
+names(df6)[3] <- "Total_People_Killed"
+
+plot6 <- ggplot(df6, aes(Year, Month)) +
+  geom_tile(aes(fill = Total_People_Killed), colour = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  scale_y_continuous(breaks=seq(1, 12, 1)) +
+  scale_x_continuous(breaks=seq(2012, 2019, 1)) +
+  ggtitle("People Injured across Months and Years") +
+  theme_bw()
+#save image 6
+ggsave(filename="Plot6.png", plot=plot6)
+```
+ 
+ 
+ ![](Plot3.png)
+
+
+
+
+From what the graph is telling us, is that from 4am and 5pm is where the accident are occurring that are causing death. Why you may ask? Well it can be coming out from a party, working at night, trying to rush home (or to whereever the destination is.) Having the knowledge of the time to be more alerted. So at this time is where you would want to be very careful, wide awake, more alert than the usual. 
+ 
+ 
+ 
+ 
+The next graph that will be analyzed is "People injured vs People killed across years".
+The data is going to be presented in a Bar graph focusing on how many people were Injured and killed from the years 2012 to the year 2019.
+
+
+![](Plot5.png)
+
+
+
+
+
+From the graph, we can see that the year 2012 saw the lowest number of injured people with just under 25,000 people injured. While 2017 and 2018 were amongst the highest in people injured with over 55,000 people injured.
+Some limitation was that it is hard to render on people killed per year because the data for people injured far exceeds that of people killed.
+
+The next graph will focus on people killed across months and years.
+The data is going to be represented in a Heat map that will focus on the number of people killed each month from the years 2012 to the year 2019.
+
+# HEATMAP FOR PEOPLE KILLED ACROSS MONTHS AND YEARS
+![](Plot6.png)
+
+
+
+
+The heat map illustrates that in the first 4 months from the year 2012-2019 there was a lower number of people killed. However, from months 7-12 the heat map shows that there were more people killed per months. This is illustrated by the dark steel blue color which indicated a higher rate of killed during that particular month.
+Some limitations are that the first 6 months of the data was not collected which could have had an impact on whether the first few months will still remain with fewer collisions than from months 7-12.
+
+
+
+
+## Data Analysis
+
+Once the data set have been clean we then took a closer look what we have. First we took the number of persons killed and number of perosn injuerd is not evenly spread out. This show that most of the accidents doesn't not have a person killed and or injured.
+
+```{r Deaths, echo=FALSE}
+#load the data set into the project 
+load("nyc_collision_saved.Rda")
+
+hist(nyc_collision_saved$number_of_persons_killed)
+```
+
+```{r Injures, echo=FALSE}
+hist(nyc_collision_saved$number_of_persons_injured)
+```
+
+When we started to break this finding down, it turns out that at least 75% of the accident doesn't result in and death or injure.
+
+```{r Persons killed, echo=FALSE}
+summary(nyc_collision_saved$number_of_persons_killed)
+```
+
+```{r Person injured, echo=FALSE}
+summary(nyc_collision_saved$number_of_persons_injured)
+```
+The most person killed in a single accident took place on 10-31-2017, in the data the cause wasn't specify. 
+
+The most person injured in a single accident took place on 09-09-2013, the cause of this accident wasn't specify but a passenger vehicle was involved.
+
+
+
+```{r sub-sample, include=FALSE}
+    # Get the manth of March from every year for 5 years 
+    temp1<- nyc_collision_saved[nyc_collision_saved$date >= "2019-03-01" & nyc_collision_saved$date <= "2019-03-31",]
+    temp2<- nyc_collision_saved[nyc_collision_saved$date >= "2018-03-01" & nyc_collision_saved$date <= "2018-03-31",]
+    temp3<- nyc_collision_saved[nyc_collision_saved$date >= "2017-03-01" & nyc_collision_saved$date <= "2017-03-31",]
+    temp4<- nyc_collision_saved[nyc_collision_saved$date >= "2016-03-01" & nyc_collision_saved$date <= "2016-03-31",]
+    temp5<- nyc_collision_saved[nyc_collision_saved$date >= "2015-03-01" & nyc_collision_saved$date <= "2015-03-31",]
+```   
+
+```{r sumkilled, include=FALSE}
+    # Get the number of persons killed from March of every year 
+    sum(temp1$number_of_persons_killed)
+    sum(temp2$number_of_persons_killed)
+    sum(temp3$number_of_persons_killed)
+    sum(temp4$number_of_persons_killed)
+    sum(temp5$number_of_persons_killed)
+```    
+
+```{r suminjured,include=FALSE}
+    #Get the number of person injured from March every year 
+    sum(temp1$number_of_persons_injured)
+    sum(temp2$number_of_persons_injured)
+    sum(temp3$number_of_persons_injured)
+    sum(temp4$number_of_persons_injured)
+    sum(temp5$number_of_persons_injured)
+    
+```
+After this I decided took a sub-sample of the data for the month of March over a 5 year period. Then took information from this an place them in a table where it is easies to view in a table. 
+
+![](stats.png)
+
+
+
+
+From the table was can see there was about a 27% increase in the number of injures between 2015 - 2019. but it's not a steady increase as in 2016 there was a drop in injures in that month. The same can be said about the number of persons killed in the same timeframe, a drop in 2016 and a 33% increase over all from 2015 - 2019. 
+
+From the data collected and analysis we can conclued that about 47.6% of all the accidents a passenger vechicle was involved. This then when down the 27% of the sports utility vehicles. I was surprsing to find although they are taxis every where you go in New York City that only 4.4% of the accidents them, based on the data collected. Another surprising fact that .25% of the accident collected in the data invloved an Ambulance. 
+
+Must of the accident record in data set the contributing factor wasn't specify, this was about 35.8%. So the highest known cuntributing factor for 18.2% of the accidents is Driver Inattention/Distraction. The second highest factor was failure to yield the right-of-way with 5.7%, that make since to me because in New York City everying is in a rust to get some where. The must surprize factor that I thought would be higher is alcohol, but only .94% of the accidents recorded in the data set. 
